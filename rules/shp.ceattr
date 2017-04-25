@@ -1,0 +1,11 @@
+//------------------------- 
+// Example Shape Tag Mapping
+
+streetscale = 1  // street width scale factor
+
+width              = getObjectAttr("width", false)
+streetWidthDefault = 7
+
+attr streetWidth = // street width dependeding on "width" attributes
+    case width > 0 : width     * streetscale
+    else           : streetWidthDefault

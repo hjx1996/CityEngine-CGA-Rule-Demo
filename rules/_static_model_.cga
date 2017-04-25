@@ -1,0 +1,84 @@
+# info:     static model generation
+
+@Hidden
+attr Asset_File = ""
+@Hidden
+attr Pos_Center = false
+@Hidden
+attr Pos_Bottom_Align = false  
+@Hidden
+attr Pos_zUp = false
+@Hidden
+attr Material_Colorize = "#ffffff"
+@Hidden
+attr Material_Transparent = false
+
+rotAngle = case Pos_zUp: -90 else: 0
+
+@Hidden
+attr scx = 1
+@Hidden
+attr scy = 1
+@Hidden
+attr scz = 1
+	
+	
+@Hidden
+StaticModel --> 
+	r(rotAngle,0,0)
+	set(scx,scope.sx) set(scy,scope.sy) set(scz,scope.sz)
+	StaticModelMode
+
+@Hidden
+StaticModelMode -->
+	case Pos_Center && Pos_Bottom_Align :
+		StaticModelCenterAlign
+	case Pos_Center:
+		StaticModelCenter
+	case Pos_Bottom_Align :
+		StaticModelAlign	
+	else:
+    	StaticModelOrig	
+
+@Hidden
+StaticModelOrig -->   	
+    s(0,0,0) i(Asset_File) s('scx,'scy,'scz)
+    set(scope.tx,scx*(scope.tx+0.5))
+    set(scope.ty,scy*(scope.ty+0.5))
+    set(scope.tz,scz*(scope.tz+scz-0.5))
+    StaticModelFinal
+
+@Hidden
+StaticModelCenter -->  
+	s(0,0,0) i(Asset_File) s('scx,'scy,'scz) center(xyz) 
+	StaticModelFinal
+
+@Hidden
+StaticModelAlign -->  
+	case Pos_zUp:
+    	s(0,0,0) i(Asset_File) s('scx,'scy,'scz) center(z) t(0,0,'0.5) 
+    	set(scope.tx,scx*(scope.tx+0.5)) set(scope.tz,scz*(scope.tz+scz-0.5))
+    	StaticModelFinal
+    else:
+ 		s(0,0,0) i(Asset_File) s('scx,'scy,'scz) center(y) t(0,'0.5,0) 
+    	set(scope.tx,scx*(scope.tx+0.5)) set(scope.tz,scz*(scope.tz+scz-0.5))
+    	StaticModelFinal
+
+@Hidden
+StaticModelCenterAlign -->   	
+	case Pos_zUp:
+    	s(0,0,0) i(Asset_File) s('scx,'scy,'scz) center(xyz) t(0,0,'0.5) StaticModelFinal
+	else:
+    	s(0,0,0) i(Asset_File) s('scx,'scy,'scz) center(xyz) t(0,'0.5,0) StaticModelFinal
+
+@Hidden
+StaticModelFinal -->
+    case Material_Colorize != "#ffffff" && Material_Transparent:
+        set(material.opacity,0.35)
+        color(Material_Colorize)
+    case Material_Colorize != "#ffffff":
+        color(Material_Colorize)
+    case Material_Transparent:
+        set(material.opacity,0.35)
+    else:
+        StaticModelFinal.

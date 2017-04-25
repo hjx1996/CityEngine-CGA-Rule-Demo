@@ -1,0 +1,435 @@
+/**
+ * File:    schematic_city.cga
+ * Created: 2 Dec 2009 21:28:35 GMT
+ * Author:  Esri R&D Center Zurich
+ */
+
+version "2014.0"
+
+
+#
+# City Wizard Example Rule
+#
+# Notes: 
+# - since city wizard examples have to run on arbitrary lot sizes, lots might be subdivided further in the grammar
+# - the different building types are depending on the distance to origin (usually this is controlled via landuse maps etc)
+#
+
+
+
+# ----------------------------------------
+# Buildings
+# ----------------------------------------
+
+# will be overridden by corresponding attribute of initial shape
+
+# constants
+const radiusHighriseArea   = 400
+const radiusCommercialArea = 800
+const radiusApartmentArea = 1200
+const radiusResidentialArea = 1600
+
+# Determine a building type depending on distance to world-origin and some stochastics 
+# 0: highrise
+# 1: commercial buildings
+# 2: apartment blocks
+# 3: residential
+# 4: openspace
+distanceToCenter = sqrt(initialShape.origin.px*initialShape.origin.px +initialShape.origin.pz*initialShape.origin.pz)
+attr buildingType =
+	case distanceToCenter < radiusHighriseArea   :  65%: 0 33%: 1   2%: 2 else: 4     # mainly highrises and commercial
+	case distanceToCenter < radiusCommercialArea :  39%: 0 50%: 1  10%: 2 else: 4     # mainly commercial
+	case distanceToCenter < radiusApartmentArea  :  26%: 1 40%: 2  25%: 3 else: 4     # mainly apartments 
+	case distanceToCenter < radiusResidentialArea:   5%: 1 30%: 2  63%: 3 else: 4     # mainly residential and apartments
+	else                                         :   1%: 1  4%: 2  90%: 3 else: 4     # more or less only residential
+	
+attr buildingHeightFactor = 1
+
+getColor = 
+	case buildingType == 3: "#ddffdd"
+	case buildingType == 2: "#ffdddd"
+	case buildingType == 1: "#ddddff"
+	else                  : "#ffffff"  
+
+@StartRule
+Lot --> 
+	case buildingType == 4: color("#b5d29c") 
+	case buildingType == 3: cleanupGeometry(all, 1.0) ResidentialBlock
+	case buildingType == 2: cleanupGeometry(all, 1.0) ApartmentBlock
+	case buildingType == 1: cleanupGeometry(all, 1.0) CommercialBlock
+	else                  : cleanupGeometry(all, 1.0) HighriseBlock
+
+LotInner --> 
+	30% : Lot 
+	else: color("#b5d29c")
+
+LotCorner --> NIL
+
+# ----------------------------------------
+# Residential
+
+# here we subdivide the initial shape further in case it is too big (to get kind of row housing...)
+ResidentialBlock -->
+	case scope.sx > 30:
+		split(x){ ~18: ResidentialBlock }*
+	case geometry.isConcave && scope.sx > 25:	# concaves are subdivided further (trying to get rid of the concavity)
+		split(x){ ~14: ResidentialBlock }*
+	case geometry.isConcave && scope.sz > 25:
+		split(z){ ~14: ResidentialBlock }*
+	case geometry.isRectangular(25) && scope.sz > scope.sx*2:
+		split(z){ ~1: alignScopeToGeometry(yUp,2) ResidentialLot | ~1: ResidentialLot }
+	case geometry.isRectangular(15) && scope.sz > scope.sx*3:
+		split(z){ ~1: alignScopeToGeometry(yUp,2) ResidentialLot | ~1: ResidentialLot }
+	else:
+		ResidentialLot
+
+ResidentialLot -->
+	case geometry.nVertices < 4:   
+		NIL
+	case !geometry.isRectangular(10):
+		innerRect
+        split(x){ 1 : NIL 
+                | 'rand(.85,.9): split(z){ ~rand(1,3): NIL | (rand(15,20)): ResidentialBuildingArea | ~1: NIL }
+                | 1 : NIL }
+	else:
+		split(x){ 1 : NIL 
+				| 'rand(.85,.9): split(z){ ~rand(1,3): NIL | (rand(15,20)): ResidentialBuildingArea | ~1: NIL }
+				| 1 : NIL }
+
+ResidentialBuildingArea -->
+	case scope.sx < 10 || scope.sz < 10:  # too small to build a house
+		NIL
+	else:
+		alignScopeToAxes(y) s('1,0,'1) # there are different possibilites to handle non-horizontal lots... scaling it to zero in the y-direction like here is the simplest way to handle it
+		ResidentialBuilding
+
+# generate some mass models according to a few very simple rules
+ResidentialBuilding -->
+		ResidentialShape
+		ResidentialExtension
+		ResidentialGarage
+	
+ResidentialShape -->
+	50% : s('1.0,0,'0.6) center(xz) ResidentialShape(rand(5,7))
+	20% : s('0.8,0,'0.5) center(xz) ResidentialShape(rand(4.5,5.5))
+	else: s('0.8,0,'0.6) center(xz) ResidentialShape(rand(5,7))
+	
+ResidentialShape(h) -->	
+	15% : Mass(h,"gable")
+	5%  : Mass(h,"hip")
+	17% : [ s('1.0,0,'0.8) Mass(h,"gable") ] split(x){ 'rand(0.35,0.6): t(0,0,'0.4) s('1,0,'rand(0.45,0.65)) Mass(h,"gable2") } # L-shape left for gable roofs
+	17% : [ s('1.0,0,'0.8) Mass(h,"hip")   ] split(x){ 'rand(0.35,0.6): t(0,0,'0.1) s('1,0,'rand(0.8,0.95)) Mass(h,"hip")     } # L-shape left for hip roofs
+	17% : [ s('1.0,0,'0.8) Mass(h,"gable") ] split(x){ ~1: NIL | 'rand(0.35,0.6): t(0,0,'0.4) s('1,0,'rand(0.45,0.65)) Mass(h,"gable2") } # L-shape right for gable roofs
+	17% : [ s('1.0,0,'0.8) Mass(h,"hip")   ] split(x){ ~1: NIL | 'rand(0.35,0.6): t(0,0,'0.1) s('1,0,'rand(0.8,0.95))  Mass(h,"hip")    } # L-shape right for hip roofs
+	5%  : [ s('1.0,0,'0.8) Mass(h,"gable") ] split(x){ ~1: NIL | 'rand(0.35,0.6): t(0,0,'0.4) s('1,0,'rand(0.55,0.65)) Mass(h,"gable2") | ~1: NIL } # T-shape for gable roofs
+	5%  : [ s('1.0,0,'0.8) Mass(h,"hip")   ] split(x){ ~1: NIL | 'rand(0.35,0.6): t(0,0,'0.1) s('1,0,'rand(0.8,0.95))  Mass(h,"hip")    | ~1: NIL } # T-shape for hip roofs
+	1%  : [ s('1.0,0,'0.8) Mass(h,"gable") ] t(0,0,'0.4) s('1,0,'rand(0.55,0.65)) split(x){ 'rand(0.3,0.4): Mass(h,"gable2") | ~1: NIL | 'rand(0.3,0.4): Mass(h,"gable2") }  # U-shape for gable roofs
+	else: [ s('1.0,0,'0.8) Mass(h,"hip")   ] t(0,0,'0.1) s('1,0,'rand(0.8,0.95))  split(x){ 'rand(0.3,0.4): Mass(h,"hip")    | ~1: NIL | 'rand(0.3,0.4): Mass(h,"hip")    }  # U-shape for hip roofs
+	
+ResidentialExtension -->
+	7%  : split(z){ (rand(1,3)): NIL | ~1: Mass(rand(3,4),extensionRoofType) | (rand(1,3)): NIL }
+	18% : split(z){ '(rand(.4,.7)): split(x){ '(rand(.3,.7)): Mass(rand(3,4.5),extensionRoofType) } }
+	18% : split(z){ '(rand(.2)): NIL | '(rand(.2,.5)): split(x){ '(rand(.3,.7)): Mass(rand(3,4.5),extensionRoofType) } }
+	18% : split(z){ '(rand(.4,.7)): split(x){ ~1: NIL | '(rand(.3,.7)): Mass(rand(3,4.5),extensionRoofType) } }
+	18% : split(z){ '(rand(.2)): NIL | '(rand(.2,.5)): split(x){ ~1: NIL | '(rand(.3,.7)): Mass(rand(3,4.5),extensionRoofType) } }
+	else: NIL
+
+extensionRoofType = 70%: "gable" else: "hip"	
+garageRoofType = 20%: "gable" else: "flat"
+	
+ResidentialGarage -->
+	46% : split(z){ ~1: NIL | '(rand(.4,.5)): split(x){ (rand(5,8)): Mass(rand(2,3),garageRoofType) } | '(rand(.2)): NIL }
+	46% : split(z){ ~1: NIL | '(rand(.4,.5)): split(x){ ~1: NIL | (rand(5,8)): Mass(rand(2,3),garageRoofType) } | '(rand(.2)): NIL }
+	else: NIL
+	
+Mass(h,rooftype) -->
+	case rooftype == "flat":
+		extrude(h*buildingHeightFactor) Stories.
+	else:
+		extrude(h*buildingHeightFactor) Stories comp(f){top: Roof(rooftype) }
+
+Stories -->
+	comp(f){ side = Stories. }
+
+const roofAngle = rand(20,30)
+
+Roof(rooftype) -->
+	case rooftype == "rooffloorRect":
+		90% : Roof. innerRect [ s('(rand(0.6,0.9)),'(rand(0.6,0.9)),'1) center(xy) alignScopeToGeometry(yUp,auto) RoofFloorShape(rand(2,3)) ]
+		else: Roof.
+	case rooftype == "rooffloor":
+		70% : Roof. innerRect [ s('(rand(0.6,0.9)),'(rand(0.6,0.9)),'1) center(xy) alignScopeToGeometry(yUp,auto) RoofFloorShape(rand(2,3)) ]
+		25% : Roof. innerRect [ s('(rand(0.8,0.95)),'(rand(0.8,0.95)),'1) center(xy) alignScopeToGeometry(yUp,auto) ResidentialShape(rand(2,3)) ]
+		else: Roof.
+	case rooftype == "gable1":
+		roofGable(roofAngle,0,0,false,1) comp(f){ bottom: NIL | all = Roof. }
+	case rooftype == "gable2":
+		roofGable(roofAngle,0,0,false,0) comp(f){ bottom: NIL | all = Roof. }
+	case rooftype == "gable":
+		roofGable(roofAngle) comp(f){ bottom: NIL | all = Roof. }
+	case rooftype == "hip":
+		roofHip(roofAngle) comp(f){ bottom: NIL | all = Roof. }
+	else: 
+		Roof.  # flatroof
+
+RoofFloorShape(h) -->	
+	split(z){ ~1: RoofFloorBack(h) | 'rand(0.5,0.7): Mass(h,"flat") }
+		
+RoofFloorBack(h) -->
+	20% : split(x){ 'rand(0.2,0.8): Mass(h,"flat") } # L-shape left
+	20% : split(x){ ~1: NIL | 'rand(0.2,0.8): Mass(h,"flat") } # L-shape right
+	40% : split(x){ ~(rand): NIL | (rand(0.8,1.5)*scope.sz):  Mass(h,"flat") | ~(rand): NIL } # T-shape
+	10% : split(x){ 'rand(0.2,0.45): Mass(h,"flat") | ~1: NIL | 'rand(0.2,0.45): Mass(h,"flat") }  # U-shape
+	else: NIL
+
+
+# ----------------------------------------
+# Apartments
+
+ApartmentBlock -->
+	case scope.sx > 60:
+		split(x){ (rand(35,50)): ApartmentLot | ~1: ApartmentBlock }
+	else:
+		ApartmentLot
+
+ApartmentLot -->
+	case geometry.nVertices < 4:   # we do not want ghery-like residential buildings ;-) ... and innerRect does not yet work on concave shapes
+		NIL
+	case !geometry.isRectangular(10):
+		innerRect 
+        split(x){ 1 : NIL 
+                | 'rand(.9,1.1): split(z){ ~rand(1,3): NIL | (rand(20,30)): ApartmentBuildingArea | ~1: NIL }
+                | 1 : NIL }
+	else:
+		split(x){ 1 : NIL 
+				| 'rand(.9,1.1): split(z){ ~rand(1,3): NIL | (rand(20,30)): ApartmentBuildingArea | ~1: NIL }
+				| 1 : NIL }
+
+ApartmentBuildingArea -->
+	case scope.sx < 20:  # too small to build a house
+		ResidentialLot
+	else:
+		alignScopeToAxes(y) s('1,0,'1) # there are different possibilites to handle non-horizontal lots... scaling it to zero in the y-direction like here is the simplest way to handle it
+		ApartmentBuilding
+		
+ApartmentBuilding -->
+	50% : s('1.0,0,'0.7) center(xz) ApartmentShape(rand(8,12))
+	20% : s('0.8,0,'0.5) center(xz) ApartmentShape(rand(7,10))
+	else: s('0.8,0,'0.6) center(xz) ApartmentShape(rand(7,11))
+
+ApartmentShape(h) -->
+	3%  : Mass(h,"gable")
+	1%  : Mass(h,"hip")
+	16% : [ s('1.0,0,'0.9) Mass(h,"gable") ] split(x){ 'rand(0.1,0.2): t(0,0,'0.45) s('1,0,'rand(0.55,0.7)) Mass(h,"gable") } # L-shape left for gable roofs
+	8%  : [ s('1.0,0,'0.9) Mass(h,"hip")   ] split(x){ 'rand(0.1,0.2): t(0,0,'0.10) s('1,0,'rand(0.85,1.0)) Mass(h,"hip")     } # L-shape left for hip roofs
+	16% : [ s('1.0,0,'0.9) Mass(h,"gable") ] split(x){ ~1: NIL | 'rand(0.1,0.2): t(0,0,'0.45) s('1,0,'rand(0.55,0.7)) Mass(h,"gable") } # L-shape right for gable roofs
+	8%  : [ s('1.0,0,'0.9) Mass(h,"hip")   ] split(x){ ~1: NIL | 'rand(0.1,0.2): t(0,0,'0.10) s('1,0,'rand(0.85,1.0))  Mass(h,"hip")    } # L-shape right for hip roofs
+	16% : [ s('1.0,0,'0.9) Mass(h,"gable") ] split(x){ ~(rand): NIL | 'rand(0.1,0.2): t(0,0,'0.45) s('1,0,'rand(0.55,0.7)) Mass(h,"gable") | ~(rand): NIL } # T-shape for gable roofs
+	8%  : [ s('1.0,0,'0.9) Mass(h,"hip")   ] split(x){ ~(rand): NIL | 'rand(0.1,0.2): t(0,0,'0.10) s('1,0,'rand(0.85,1.0))  Mass(h,"flat")  | ~(rand): NIL } # T-shape for hip roofs
+	16% : [ s('1.0,0,'0.9) Mass(h,"gable") ] t(0,0,'0.45) s('1,0,'rand(0.55,0.7)) split(x){ 'rand(0.1,0.2): Mass(h,"gable") | ~1: NIL | 'rand(0.2,0.3): Mass(h,"gable") }  # U-shape for gable roofs
+	else: [ s('1.0,0,'0.9) Mass(h,"hip")   ] t(0,0,'0.10) s('1,0,'rand(0.85,1.0)) split(x){ 'rand(0.1,0.2): Mass(h,"flat")    | ~1: NIL | 'rand(0.2,0.3): Mass(h,"flat")    }  # U-shape for hip roofs
+
+
+# ----------------------------------------
+# Commercials
+
+commercialBuildingWidth = 70%: rand(15,25) else: rand(25,80)
+
+CommercialBlock -->
+	CommercialRow(0)
+	
+CommercialRow(count) -->
+	case scope.sx > 30:
+		split(x){ commercialBuildingWidth: CommercialLot(count) | ~1: CommercialRow(count+1) }
+	else:
+		CommercialLot(0)
+
+CommercialLot(count) -->
+	case geometry.nVertices < 4:   # we do not want ghery-like residential buildings ;-) ... and innerRect does not yet work on concave shapes
+		ApartmentLot
+	else:
+		case count == 0 && p(0.5):
+			  CommercialBuildingArea(0)
+		else:
+			40% : split(z){ '(rand(0.2,0.4)): NIL | ~1: CommercialBuildingArea(1) | (rand(4)): NIL }		# 20% with a setback
+			else: split(z){ '(rand(0.2,0.4)): NIL | ~1: CommercialBuildingArea(1) }
+
+CommercialBuildingArea(count) -->
+	case scope.sx < 10 || scope.sz < 10:  # too small to build a house
+		NIL
+	else:
+		alignScopeToAxes(y) s('1,0,'1) # there are different possibilites to handle non-horizontal lots... scaling it to zero in the y-direction like here is the simplest way to handle it
+		CommercialBuilding(count)
+		
+CommercialBuilding(count) -->
+	case scope.sx > 40:
+		CommercialShape(count,rand(16,30))
+	else:
+		CommercialShape(count,rand(10,20))
+		
+CommercialShape(count,h) -->
+	case scope.sx > 20:
+		split(z){ ~1: CommercialBack(h) | 'rand(0.7,0.9): Mass(h,"rooffloor") }
+	case count != 0:
+		split(z){ ~1: CommercialBack(h) | 'rand(0.85,0.95): Mass(h,"rooffloor") }
+	else:
+		 Mass(h,"flat")		
+		
+ CommercialBack(h) -->
+	20% : split(x){ 'rand(0.2,0.8): Mass(h,"flat") } # L-shape left
+	20% : split(x){ ~1: NIL | 'rand(0.2,0.8): Mass(h,"flat") } # L-shape right
+	50% : split(x){ ~(rand): NIL | (rand(0.8,1.5)*scope.sz):  Mass(h,"flat") | ~(rand): NIL } # T-shape
+	else: split(x){ 'rand(0.2,0.45): Mass(h,"flat") | ~1: NIL | 'rand(0.2,0.45): Mass(h,"flat") }  # U-shape
+
+# ----------------------------------------
+# Highrise
+
+HighriseBlock -->
+	HighriseBlock(0)
+	
+HighriseBlock(index) -->
+	case index >= geometry.nEdges:
+		NIL
+	case scope.sz > 50:
+		split(z){ ~1: alignScopeToGeometry(yUp,index+1) HighriseBlock(index+1) | (rand(40,80)): HighriseRow }
+	else:
+		alignScopeToGeometry(yUp,index+1) HighriseRow
+		
+HighriseRow -->
+	case scope.sx > 60:
+		split(x){ (rand(40,80)): HighriseLot | ~1: HighriseRow }
+	else:
+		HighriseLot
+
+HighriseLot  -->
+	case scope.sx < 20 || scope.sz < 20:  # too small to build a house
+		CommercialLot(0)
+	else:
+		alignScopeToAxes(y) s('1,0,'1) # there are different possibilites to handle non-horizontal lots... scaling it to zero in the y-direction like here is the simplest way to handle it
+		HighriseBuilding(rand(6,10))
+
+# distance to center controls the building height		
+highriseBuildingHeight =
+	case distanceToCenter < radiusHighriseArea/4  && geometry.area > 400 :  rand(100,250)  
+	case distanceToCenter < radiusHighriseArea/2  && geometry.area > 200 :  rand(80,150)  
+	case distanceToCenter < radiusHighriseArea    && geometry.area > 150 :  rand(40,80)  
+	case distanceToCenter < (radiusHighriseArea+radiusCommercialArea)/2   :  rand(30,60)  
+	else :  rand(20,50)
+		
+HighriseBuilding(lowerH) -->
+	20% : Mass(lowerH,"flat") t(0,lowerH,0) s('0.7,'1,'0.7) center(xz) HighriseUpper
+	70% : Mass(lowerH,"flat") t(0,lowerH,0) s('0.8,'1,'0.8) center(xz) HighriseUpper
+	else: Mass(lowerH,"flat") t(0,lowerH,0) HighriseUpper
+
+
+HighriseUpper -->
+	case distanceToCenter < radiusHighriseArea/2 :  HighriseTower
+	case distanceToCenter < radiusHighriseArea/2 :  70%: HighriseTower else: HighriseShape
+	case distanceToCenter < radiusHighriseArea   :  30%: HighriseTower else: HighriseShape
+	else                                         :  HighriseShape
+	
+HighriseShape -->
+	case scope.sz > 40 && p(0.5):
+		split(z){ 'rand(.1,.3): NIL | ~1: HighriseShape }
+	else:
+		70% : LShape(highriseBuildingHeight)
+		20% : UShape(highriseBuildingHeight)
+		else: split(z){ ~1: NIL | 'rand(.4,.6): HighriseMass }
+	
+LShape(h) --> 
+	split(z){ ~1: LShapeWing(h) | 'rand(.4,.6): HighriseMass(h) }
+
+LShapeWing(h) -->
+	50% : split(x){ ~1 : NIL | 'rand(0.4,0.6) : Wing(h) }  // right side
+	else: split(x){ 'rand(0.4,0.6) : Wing(h) }				// left side
+
+UShape(h) -->
+	case scope.sx > scope.sz:
+		split(z){ ~1: UShapeWings(h) | 'rand(0.4,0.7): HighriseMass(h) }
+	else:
+		split(z){ 'rand(.3,.4): HighriseMass(h) | ~1: CHWing(h) | 'rand(.3,.4): HighriseMass(h) }
+		
+UShapeWings(h) -->
+	split(x){ 'rand(0.3,0.4): Wing(h) | ~1: NIL | 'rand(0.3,0.4): Wing(h) }
+
+Wing(h) -->
+	30% : HighriseMass(h)  						// same height
+	30% : HighriseMass(h*rand(0.5,0.9))	        // lower height 1
+	else: HighriseMass(highriseBuildingHeight*rand(0.5,0.7))	// lower height 2
+	
+CHWing(h) -->
+	40% : split(x){ ~1: NIL | 'rand(0.5,0.7): HighriseMass(h) | ~1: NIL }
+	30% : split(x){ 'rand(0.5,0.7): HighriseMass(h) }
+	else: split(x){ ~1: NIL | 'rand(0.5,0.7): HighriseMass(h) }			
+
+HighriseMass -->
+	Mass(highriseBuildingHeight,"rooffloorRect")	
+	
+HighriseMass(h) -->
+	Mass(h,"rooffloorRect")	
+
+
+		
+HighriseTower -->
+	case geometry.isConcave:
+		alignScopeToGeometry(yUp,auto) InternationalTower
+	case scope.sx > 20 && scope.sz > 20:
+		alignScopeToGeometry(yUp,auto) innerRect SetbackTower
+	else: 
+		LShape(highriseBuildingHeight*0.5)
+
+SetbackTower -->
+	case scope.sx < 20 || scope.sz < 20:
+		LShape(highriseBuildingHeight*0.3)
+	case scope.sx < 30:
+		[ s('1,'1,'0.8) center(z) extrude(highriseBuildingHeight*buildingHeightFactor*rand(0.7,0.95)) RecursiveSetbacks ]
+		[ s('0.6,'1,'1.0) center(x) extrude(highriseBuildingHeight*buildingHeightFactor) RecursiveSetbacks ]
+	else: 
+		50% : 
+			[ s('1,'1,'0.7) center(z) extrude(highriseBuildingHeight*buildingHeightFactor*rand(0.7,0.95)) RecursiveSetbacks ]
+			[ s('0.6,'1,'1.0) center(x) extrude(highriseBuildingHeight*buildingHeightFactor) RecursiveSetbacks ]
+		else: 
+			[ s('1,'1,'0.6) center(z) extrude(highriseBuildingHeight*buildingHeightFactor) RecursiveSetbacks ]
+			[ s('0.8,'1,'1.0) center(x) extrude(highriseBuildingHeight*buildingHeightFactor*rand(0.7,0.95)) RecursiveSetbacks ]
+	
+lowHeight 	= 50% : 0.3 else: 0.7	// switching between these two values creates visually appealing setbacks
+const scale 	= rand(0.7,0.9)		// has to be constant
+
+RecursiveSetbacks -->
+	case scope.sy > 10 && scope.sx > 10 &&  scope.sz > 10:
+		split(y){ 'lowHeight : Stories. | ~1: s('scale,'1,'scale) center(xz) RecursiveSetbacks }
+	else: 
+		s('1,5,'1) Stories comp(f){top: Roof("rooffloorRect") }												
+			
+		
+InternationalTower -->
+	case scope.sx < 30:
+		HighriseMass(highriseBuildingHeight*0.6)
+	case p(0.7):
+		split(z){ scope.sx*0.4: HighriseMass }
+	else: 
+		LShape(highriseBuildingHeight*0.7)
+
+
+
+# ----------------------------------------
+# Streets
+# ----------------------------------------
+
+attr type = ""  # will be overridden by corresponding attribute of initial shape
+
+# Rules
+
+Street --> case type == "MINOR": color("#ffffff") else: color("#fff881")
+
+Joint					--> Street
+Crossing 				--> Street
+Junction 				--> Street
+JunctionEntry 			--> Street	
+Freeway 				--> Street
+FreewayEntry 			--> Street
+Roundabout 				--> Street
+RoundaboutIsland 		--> Sidewalk
+RoundaboutEntry 		--> Street
+
+Sidewalk --> color("#bfb8a8")

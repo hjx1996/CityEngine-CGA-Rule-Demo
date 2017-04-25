@@ -1,0 +1,80 @@
+/**
+ * File:    scifi_city.cga
+ * Created: 30 Nov 2009 13:09:10 GMT
+ * Author:  Esri R&D Center Zurich
+ */
+ 
+version "2014.0"
+
+
+###################################
+# Buildings
+#
+
+
+# RULES ###########
+distanceToCenter = sqrt(initialShape.origin.px*initialShape.origin.px +initialShape.origin.pz*initialShape.origin.pz)  # needed for facade wizard only
+
+@StartRule
+Lot --> 
+	case p(distanceToCenter/rand(4000,6000)): Ground  	# openspace depending on distance to origin (wicard city only)
+	else: Ground Parcel
+
+LotInner --> Lot
+
+LotCorner --> Ground
+
+Parcel -->
+	alignScopeToGeometry(yUp,0,longest) innerRect # align the shape to fit the optimal innerRect
+	alignScopeToGeometry(yUp,0,longest) Footprint # align the innerRect shape to be able to finetune the footprint later
+
+# Finetune the footprint
+Footprint -->
+	case geometry.area < 300:
+		Ground
+	case scope.sz*2.7 < scope.sx:
+		split(x){ ~rand(0.3,1): Footprint | ~rand(0.2) : NIL | ~rand(0.3,1): Footprint } # recursively subdivide the footprint
+	else : 
+		alignScopeToAxes(y) s('1,0,'1) Building
+
+# Insert the asset on the Footprint
+Building -->
+	i(assetApproxRatio("assets/scifi/scifi_building_*.obj", "xz", 5))
+	BuildingMaterial
+
+# set building material details
+BuildingMaterial -->	
+	set(material.specular.r,70) set(material.specular.g,70) set(material.specular.b,70)		# for the looks in the CityEngine we add some over-exagerated specularity (otherwise the model is too dark for opengl...)
+	set(material.specularmap,"scifi/scifi_texture_day.jpg")
+	set(material.shininess,10)
+	
+Ground -->
+	setupProjection(0,world.xz,300,2048) projectUV(0)
+	texture("scifi/ground_texture.png")
+
+
+
+###################################
+# Streets
+#
+
+Street -->
+	setupProjection(0,scope.xz,200,100) projectUV(0) translateUV(0, rand, rand)	
+	texture("scifi/streets_texture.png")
+
+Joint 				--> Street
+Crossing 			--> Street
+Junction 			--> Street
+JunctionEntry 		--> Street
+Freeway 			--> Street
+FreewayEntry 		--> Street
+Roundabout 			--> Street
+RoundaboutIsland	--> Ground
+RoundaboutEntry 	--> Street
+
+Sidewalk 			--> Ground
+
+
+
+
+	

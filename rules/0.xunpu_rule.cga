@@ -1,0 +1,63 @@
+# 需要定义的变量
+# Shape_Level 建筑层数
+# Roof_Style 屋顶形制类型编号
+
+attr Shape_Level = 0
+attr roof_style_1 = 30
+attr roof_style_2 = 35
+Floor_Level =  
+	case Roof_Style == 1 : 6
+	case Roof_Style == 2 : 5
+	case Roof_Style == 3 : 4 //定义一层高度
+
+# 建筑语言定义
+Lot -- >
+	exturde (height) Building
+		height = Floor_Level + ( Shape_Level -1 ) * 4
+	comp(f){ top : Roof | side : Wall}
+
+Roof -- >
+	case Roof_Style == 1 : 
+ 		roofHip(roof_style_1)
+ 		split(y){'0.5 : comp(f) {bottom : NIL | horizontal : Roof_top | all : FlatRoof_Tex.}'}
+ 			Roof_top -- >
+ 			roofHip(roof_style_1)
+ 		setupProjection(0, scope, xy, '1, '1)
+ 		projectUV(0)
+ 		texture(    )
+	case Roof_Style == 2 : 
+ 		roofHip(roof_style_2)
+ 		setupProjection(0, scope, xy, '1, '1)
+ 		projectUV(0)
+ 		texture(    )
+	case Roof_Style == 3 : 
+ 		roofGable(roof_style_1)
+ 		setupProjection(0, scope, xy, '1, '1)
+ 		projectUV(0)
+ 		texture(    )
+
+Wall -->
+	color
+
+# 绿地语言定义
+attr placementWidth = 0.05
+attr streetDist = 0.2
+attr objectDist = 5
+attr objectSize = 0.1
+attr objectHeight = 2
+
+Sidewalk -- >
+	SidewalkGeometry
+	SidewalkObjects
+
+SidewalkObjects -- > 
+	# 沿着道路纵向分割两边的和人行道
+	split (v, unitSpace, 0) {streetDisk : NIL | placementWidth : PlacementStrip | ~1 : NIL}
+
+PlacementStrip -- > 
+	# 沿着人行道分割横向切割，切成小段
+	split (u, unitSpace, 0) {}
+
+# 道路语言定义
+
+# 铺地语言定义
