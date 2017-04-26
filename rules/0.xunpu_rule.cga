@@ -2,6 +2,8 @@
 # Shape_Level 建筑层数
 # Roof_Style 屋顶形制类型编号
 
+########################################
+# 建筑语言定义
 attr Shape_Level = 0
 attr roof_style_1 = 30
 attr roof_style_2 = 35
@@ -10,7 +12,6 @@ Floor_Level =
 	case Roof_Style == 2 : 5
 	case Roof_Style == 3 : 4 //定义一层高度
 
-# 建筑语言定义
 Lot -- >
 	exturde (height) Building
 		height = Floor_Level + ( Shape_Level -1 ) * 4
@@ -21,7 +22,7 @@ Roof -- >
  		roofHip(roof_style_1)
  		split(y){'0.5 : comp(f) {bottom : NIL | horizontal : Roof_top | all : FlatRoof_Tex.}'}
  			Roof_top -- >
- 			roofHip(roof_style_1)
+ 			roofHip(roof_style_2)
  		setupProjection(0, scope, xy, '1, '1)
  		projectUV(0)
  		texture(    )
@@ -39,25 +40,107 @@ Roof -- >
 Wall -->
 	color
 
-# 绿地语言定义
-attr placementWidth = 0.05
-attr streetDist = 0.2
-attr objectDist = 5
-attr objectSize = 0.1
-attr objectHeight = 2
-
-Sidewalk -- >
-	SidewalkGeometry
-	SidewalkObjects
-
-SidewalkObjects -- > 
-	# 沿着道路纵向分割两边的和人行道
-	split (v, unitSpace, 0) {streetDisk : NIL | placementWidth : PlacementStrip | ~1 : NIL}
-
-PlacementStrip -- > 
-	# 沿着人行道分割横向切割，切成小段
-	split (u, unitSpace, 0) {}
-
+########################################
 # 道路语言定义
+# attr placementWidth = 0.05
+# attr streetDist = 0.2
+# attr objectDist = 5
+# attr objectSize = 0.1
+# attr objectHeight = 2
 
+# Sidewalk -- >
+#	SidewalkGeometry
+#	SidewalkObjects
+
+# SidewalkObjects -- > 
+	# 沿着道路纵向分割两边的和人行道
+#	split (v, unitSpace, 0) {streetDisk : NIL | placementWidth : PlacementStrip | ~1 : NIL}
+
+# PlacementStrip -- > 
+	# 沿着人行道分割横向切割，切成小段
+#	split (u, unitSpace, 0) {}
+
+
+########################################
+# 绿地语言定义
+# 以下纯属种树
+attr Level_of_Detail = "Low"
+const highLOD = Level_of_Detail == "High"
+const medLOD = Level_of_Detail == "Med"
+
+attr GENUS = "Unknown"
+attr HEIGHT = 0
+attr zFactor = 1.0
+
+lowTree = "assets/trees/appletree.lod0.obj"
+medTree = fileRandom("assets/trees/alleyTree_*_v1.obj")
+medTreePalm = "assets/trees/Was_Rob.obj"
+highTree = fileRandom("assets/trees/tree_eu03_11_*.obj")
+
+@StartRule
+Tree --> 
+	case highLOD :
+		 alignScopeToAxes(y)
+		 s(0,HEIGHT*.3048*zFactor,0) 			
+		 r(0,rand(0,360),0)		// 随机旋转
+		 i(highTree) 
+	case medLOD && GENUS == "Washingtonia":
+		 alignScopeToAxes(y)
+		 s(0,HEIGHT*.3048*zFactor,0) 			
+		 r(0,rand(0,360),0)		// 随机旋转
+		 i(medTreePalm)
+	case medLOD && GENUS != "Washingtonia":
+		 alignScopeToAxes(y)
+		 s(0,HEIGHT*.3048*zFactor,0) 			
+		 r(0,rand(0,360),0)		// 随机旋转
+		 i(medTree)	 	
+	else :
+		 alignScopeToAxes(y) 	
+		 s(0,HEIGHT*.3048*zFactor,0) 			
+		 r(0,rand(0,360),0)		// 随机旋转
+		 set(material.opacity,0.5)
+		 i(lowTree) //似乎还缺少条件的定义，以及这段如何种树，之后在群里问一下。
+
+
+#########################################
 # 铺地语言定义
+
+# 需要定义的属性
+# SURFUSE == “Sikewalk, Bike Path, Parking Lot, Curb / Gutter, Gutter"
+# 很好的铺地学习教程
+//道路铺地
+//以下部分酌情修改
+attr street_tex = "exteriorTextures/street.jpg"
+attr walkingpath_tex = "exteriorTextures/walkingpath.jpg"
+attr sidewalk_tex = "exteriorTextures/sidewalk.png"
+attr bikepath_tex = "exteriorTextures/bikepath.png"
+attr parkinglot_tex = "exteriorTextures/parkinglot.png"
+attr curb_tex = "exteriorTextures/sidewalk.png"
+attr gutter_tex = "exteriorTextures/sidewalk.png"
+attr dirtmap_tex = "exteriorTextures/dirtmap.png"
+
+//铺地默认颜色
+attr errorColor 	= "#FF0000"
+attr walkingpathColor	= "#DDC1C6"
+attr SURFUSE 		= "unknown"
+
+@StartRule
+Landscape -->
+	case SURFUSE == "Street" :
+		setupProjection(0, scope.zx, 3, 3) projectUV(0) texture(street_tex) 
+	case SURFUSE == "Walking Path" :
+		setupProjection(2, scope.zx, 3, 3) projectUV(2) color(walkingpathColor)
+	set(material.dirtmap,dirtmap_tex)
+//		color(walkingpathColor) projectUV(0) setupProjection(2, scope.zx, 3, 3) projectUV(2) texture(dirtmap_tex)
+	case SURFUSE == "Sidewalk" :
+		setupProjection(0, scope.zx, 3, 3) projectUV(0) texture(sidewalk_tex) 		
+	case SURFUSE == "Bike Path" :
+		setupProjection(0, scope.zx, 3, 3) projectUV(0) texture(bikepath_tex)
+	case SURFUSE == "Parking Lot" :
+		setupProjection(0, scope.zx, 3, 3) projectUV(0) texture(parkinglot_tex) 
+	case SURFUSE == "Curb / Gutter" :
+		setupProjection(0, scope.zx, 3, 3) projectUV(0) texture(curb_tex) 
+	case SURFUSE == "Gutter" :
+		setupProjection(0, scope.zx, 3, 3) projectUV(0) texture(gutter_tex)
+	else :
+		setupProjection(0, scope.zx, 3, 3) projectUV(0) color(errorColor)
